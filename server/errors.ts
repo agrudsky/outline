@@ -1,22 +1,13 @@
 import httpErrors from "http-errors";
+import env from "./env";
 
 export function AuthenticationError(
-  message = "Authentication required",
-  redirectUrl = "/"
+  message = "Invalid authentication",
+  redirectUrl = env.URL
 ) {
   return httpErrors(401, message, {
     redirectUrl,
     id: "authentication_required",
-  });
-}
-
-export function InvalidAuthenticationError(
-  message = "Invalid authentication",
-  redirectUrl = "/"
-) {
-  return httpErrors(401, message, {
-    redirectUrl,
-    id: "invalid_authentication",
   });
 }
 
@@ -25,14 +16,6 @@ export function AuthorizationError(
 ) {
   return httpErrors(403, message, {
     id: "permission_required",
-  });
-}
-
-export function RateLimitExceededError(
-  message = "Rate limit exceeded for this operation"
-) {
-  return httpErrors(429, message, {
-    id: "rate_limit_exceeded",
   });
 }
 
@@ -129,7 +112,7 @@ export function MaximumTeamsError(
 
 export function EmailAuthenticationRequiredError(
   message = "User must authenticate with email",
-  redirectUrl = "/"
+  redirectUrl = env.URL
 ) {
   return httpErrors(400, message, {
     redirectUrl,
@@ -181,10 +164,24 @@ export function OIDCMalformedUserInfoError(
 
 export function AuthenticationProviderDisabledError(
   message = "Authentication method has been disabled by an admin",
-  redirectUrl = "/"
+  redirectUrl = env.URL
 ) {
   return httpErrors(400, message, {
     redirectUrl,
     id: "authentication_provider_disabled",
   });
+}
+
+// Billing errors
+
+export function TeamSuspendedError(
+  message = "Please subscribe to a paid plan to create content for your team"
+) {
+  return httpErrors(400, message, { id: "team_suspended" });
+}
+
+export function SAMLAssertionError(
+  message = "An error occurred provisioning user"
+) {
+  return httpErrors(400, message, { id: "saml_assertion_error" });
 }

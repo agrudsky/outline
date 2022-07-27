@@ -1,42 +1,40 @@
 import crypto from "crypto";
 import { addMinutes, subMinutes } from "date-fns";
+import type { Request } from "express";
 import fetch from "fetch-with-proxy";
-import type { Context } from "koa";
 import {
   StateStoreStoreCallback,
   StateStoreVerifyCallback,
 } from "passport-oauth2";
 import { getCookieDomain, parseDomain } from "@shared/utils/domains";
-import env from "@server/env";
-import { Team } from "@server/models";
 import { AuthRedirectError, OAuthStateMismatchError } from "../errors";
 
 export class StateStore {
   key = "state";
 
-  store = (ctx: Context, callback: StateStoreStoreCallback) => {
+  store = (req: Request, callback: StateStoreStoreCallback) => {
     // token is a short lived one-time pad to prevent replay attacks
     // appDomain is the domain the user originated from when attempting auth
     // we expect it to be a team subdomain, custom domain, or apex domain
     const token = crypto.randomBytes(8).toString("hex");
-    const appDomain = parseDomain(ctx.hostname);
+    const appDomain = parseDomain(req.hostname);
     const state = buildState(appDomain.host, token);
 
-    ctx.cookies.set(this.key, state, {
+    req.cookies.set(this.key, state, {
       httpOnly: false,
       expires: addMinutes(new Date(), 10),
-      domain: getCookieDomain(ctx.hostname),
+      domain: getCookieDomain(req.hostname),
     });
 
     callback(null, token);
   };
 
   verify = (
-    ctx: Context,
+    req: Request,
     providedToken: string,
     callback: StateStoreVerifyCallback
   ) => {
-    const state = ctx.cookies.get(this.key);
+    const state = req.cookies.get(this.key);
 
     if (!state) {
       return callback(
@@ -53,10 +51,10 @@ export class StateStore {
     // If there is an error during auth, the user will end up on the same domain
     // that they started from.
     const appDomain = parseDomain(host);
-    if (appDomain.host !== parseDomain(ctx.hostname).host) {
-      const reqProtocol = ctx.protocol;
-      const requestHost = ctx.get("host");
-      const requestPath = ctx.originalUrl;
+    if (appDomain.host !== parseDomain(req.hostname).host) {
+      const reqProtocol = req.protocol;
+      const requestHost = req.get("host");
+      const requestPath = req.originalUrl;
       const requestUrl = `${reqProtocol}://${requestHost}${requestPath}`;
       const url = new URL(requestUrl);
 
@@ -66,10 +64,10 @@ export class StateStore {
     }
 
     // Destroy the one-time pad token and ensure it matches
-    ctx.cookies.set(this.key, "", {
+    req.cookies.set(this.key, "", {
       httpOnly: false,
       expires: subMinutes(new Date(), 1),
-      domain: getCookieDomain(ctx.hostname),
+      domain: getCookieDomain(req.hostname),
     });
 
     if (!token || token !== providedToken) {
@@ -79,6 +77,17 @@ export class StateStore {
     // @ts-expect-error Type in library is wrong
     callback(null, true, state);
   };
+}
+
+export function getSAMLProviderDisplayName(url = ""): string {
+  if (url.includes("onelogin.com")) {
+    return "OneLogin";
+  }
+  if (url.includes("okta.com")) {
+    return "Okta";
+  }
+
+  return "SAML";
 }
 
 export async function request(endpoint: string, accessToken: string) {
@@ -99,25 +108,4 @@ function buildState(host: string, token: string) {
 export function parseState(state: string) {
   const [host, token] = state.split("|");
   return { host, token };
-}
-
-export async function getTeamFromContext(ctx: Context) {
-  // "domain" is the domain the user came from when attempting auth
-  // we use it to infer the team they intend on signing into
-  const state = ctx.cookies.get("state");
-  const host = state ? parseState(state).host : ctx.hostname;
-  const domain = parseDomain(host);
-
-  let team;
-  if (env.DEPLOYMENT !== "hosted") {
-    team = await Team.findOne();
-  } else if (domain.custom) {
-    team = await Team.findOne({ where: { domain: domain.host } });
-  } else if (env.SUBDOMAINS_ENABLED && domain.teamSubdomain) {
-    team = await Team.findOne({
-      where: { subdomain: domain.teamSubdomain },
-    });
-  }
-
-  return team;
 }
